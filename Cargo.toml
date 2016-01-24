@@ -1,4 +1,7 @@
 [package]
 name = "http2"
 version = "0.1.0"
-authors = ["Hans-HarroHorn <h.h.horn@gmail.com>"]
+authors = ["Hans-Harro Horn <h.h.horn@gmail.com>"]
+
+[dependencies]
+byteorder = "*"
