@@ -1,6 +1,7 @@
 use std::io::{Read, Write};
 use byteorder::{ByteOrder, BigEndian};
 use frame::{Frame, FrameType};
+use error::ConnectionError;
 
 /// Settings Parameter according to rfc 6.5.2
 #[derive(Debug, Clone, PartialEq)]
@@ -20,19 +21,9 @@ pub struct SettingsFrame {
 }
 
 impl SettingsFrame {
-    pub fn is_ack(&self) -> bool {
-        self.ack
-    }
-
-    pub fn set_ack(&mut self, ack: bool) {
-        self.ack = ack;
-    }
-}
-
-impl Frame for SettingsFrame {
-    fn from_raw(stream_id: u32, flags: u8, payload: &[u8]) -> ::Result<SettingsFrame> {
+    pub fn from_raw(stream_id: u32, flags: u8, payload: &[u8]) -> Result<SettingsFrame, ConnectionError> {
         if stream_id != 0 {
-            return Err(::Error::Protocol)
+            return Err(ConnectionError::Protocol)
         }
         let mut frame: Self = Default::default();
         if flags & 0x1 != 0 {
@@ -44,6 +35,39 @@ impl Frame for SettingsFrame {
         Ok(frame)
     }
 
+    pub fn is_ack(&self) -> bool {
+        self.ack
+    }
+
+    pub fn set_ack(&mut self, ack: bool) {
+        self.ack = ack;
+    }
+}
+
+fn parse_payload(payload: &[u8]) -> Result<Vec<Setting>, ConnectionError> {
+    if payload.len() % 6 != 0 {
+        return Err(ConnectionError::FrameSize);
+    }
+    let n = payload.len() / 6;
+    let mut settings = Vec::with_capacity(n);
+    for p in 0..n {
+        let id = BigEndian::read_u16(&payload[p..]);
+        let val = BigEndian::read_u32(&payload[p+2..]);
+        // parse according to rfc 6.5.2
+        match id {
+            0x1 => settings.push(Setting::HeaderTableSize(val)),
+            0x2 => settings.push(Setting::EnablePush(val)),
+            0x3 => settings.push(Setting::MaxConcurrentStreams(val)),
+            0x4 => settings.push(Setting::InitialWindowSize(val)),
+            0x5 => settings.push(Setting::MaxFrameSize(val)),
+            0x6 => settings.push(Setting::MaxHeaderListSize(val)),
+            _ => continue
+        }
+    }
+    Ok(settings)
+}
+
+impl Frame for SettingsFrame {
     #[inline]
     fn payload_len(&self) -> usize {
         // each settings consists of an 2 byte identifier and 4 byte value
@@ -66,29 +90,6 @@ impl Frame for SettingsFrame {
         // stream identifier for a settings frame must be zero
         0
     }
-}
-
-fn parse_payload(payload: &[u8]) -> ::Result<Vec<Setting>> {
-    if payload.len() % 6 != 0 {
-        return Err(::Error::FrameSize);
-    }
-    let n = payload.len() / 6;
-    let mut settings = Vec::with_capacity(n);
-    for p in 0..n {
-        let id = BigEndian::read_u16(&payload[p..]);
-        let val = BigEndian::read_u32(&payload[p+2..]);
-        // parse according to rfc 6.5.2
-        match id {
-            0x1 => settings.push(Setting::HeaderTableSize(val)),
-            0x2 => settings.push(Setting::EnablePush(val)),
-            0x3 => settings.push(Setting::MaxConcurrentStreams(val)),
-            0x4 => settings.push(Setting::InitialWindowSize(val)),
-            0x5 => settings.push(Setting::MaxFrameSize(val)),
-            0x6 => settings.push(Setting::MaxHeaderListSize(val)),
-            _ => continue
-        }
-    }
-    Ok(settings)
 }
 
 #[cfg(test)]

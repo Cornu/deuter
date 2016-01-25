@@ -10,8 +10,7 @@ mod frame;
 use std::io::{Read, Write};
 use connection::Connection;
 
-pub use error::{Error, Result};
-
+pub use error::{Error, ConnectionError};
 
 pub struct Server<C> {
     conn: C,
@@ -26,11 +25,11 @@ impl<C: Connection> Server<C> {
         }
     }
 
-    fn handle_preface(&mut self) -> ::Result<()> {
+    fn handle_preface(&mut self) -> Result<(), Error> {
         let mut buf = [0; 24];
         try!(self.conn.read(&mut buf)); // TODO read_exact
         if &buf != b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n" {
-            return Err(::Error::Connection);
+            return Err(Error::Connection(ConnectionError::Protocol));
         }
         Ok(())
     }
