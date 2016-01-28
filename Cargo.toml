@@ -1,5 +1,5 @@
 [package]
-name = "http2"
+name = "deuter"
 version = "0.1.0"
 authors = ["Hans-Harro Horn <h.h.horn@gmail.com>"]
 
