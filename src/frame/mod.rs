@@ -14,16 +14,17 @@ trait Frame: Sized {
 }
 
 enum FrameType {
-    Data,
-    Headers,
-    Priority,
-    RstConn,
+    //Data,
+    //Headers,
+    //Priority,
+    //RstConn,
     Settings(SettingsFrame),
-    PushPromise,
-    Ping,
-    GoAway,
-    WindowUpdate,
-    Continuation,
+    //PushPromise,
+    //Ping,
+    //GoAway,
+    //WindowUpdate,
+    //Continuation,
+    Unknown,
 }
 
 pub trait ReadFrame: Read {
@@ -41,7 +42,8 @@ pub trait ReadFrame: Read {
         let payload = Vec::with_capacity(payload_len);
         match frame_type {
             0x4 => Ok(FrameType::Settings(try!(SettingsFrame::from_raw(stream_id, flags, &payload[..])))),
-            _ => Err(Error::Connection(ConnectionError::Protocol))
+            // TODO read and discard unknown frame payload
+            _ => Ok(FrameType::Unknown),
         }
     }
 }
