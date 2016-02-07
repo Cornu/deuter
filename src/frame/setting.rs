@@ -1,9 +1,8 @@
-use std::io::{Read, Write};
 use byteorder::{ByteOrder, BigEndian};
-use frame::{Frame, FrameType, Flags};
-use error::ConnectionError;
+use frame::{Frame, Flags};
+use error::{Error, ErrorKind, Result};
 
-pub const FlagAck: Flags = 0x1;
+pub const FLAG_ACK: Flags = 0x1;
 
 /// Settings Parameter according to rfc 6.5.2
 #[derive(Debug, Clone, PartialEq)]
@@ -23,15 +22,15 @@ pub struct SettingsFrame {
 }
 
 impl SettingsFrame {
-    pub fn from_raw(stream_id: u32, flags: u8, payload: &[u8]) -> Result<SettingsFrame, ConnectionError> {
+    pub fn from_raw(stream_id: u32, flags: u8, payload: &[u8]) -> Result<SettingsFrame> {
         if stream_id != 0 {
-            return Err(ConnectionError::Protocol);
+            return Err(Error::new(ErrorKind::Protocol, "The stream identifier for a settings frame must be zero"));
         }
         let mut frame: Self = Default::default();
-        if flags & FlagAck != 0 {
+        if flags & FLAG_ACK != 0 {
             frame.ack = true;
             if !payload.is_empty() {
-                return Err(ConnectionError::FrameSize);
+                return Err(Error::new(ErrorKind::FrameSize, "Settings Frame with Ack Flag must be empty"));
             }
         }
         if !payload.is_empty() {
@@ -56,9 +55,9 @@ impl SettingsFrame {
     }
 }
 
-fn parse_payload(payload: &[u8]) -> Result<Vec<Setting>, ConnectionError> {
+fn parse_payload(payload: &[u8]) -> Result<Vec<Setting>> {
     if payload.len() % 6 != 0 {
-        return Err(ConnectionError::FrameSize);
+        return Err(Error::new(ErrorKind::FrameSize, "Settings Frame payload lengthmust be multiple of 6"));
     }
     let n = payload.len() / 6;
     let mut settings = Vec::with_capacity(n);
@@ -71,7 +70,7 @@ fn parse_payload(payload: &[u8]) -> Result<Vec<Setting>, ConnectionError> {
             0x2 => match val {
                 0 => settings.push(Setting::EnablePush(false)),
                 1 => settings.push(Setting::EnablePush(true)),
-                _ => return Err(ConnectionError::Protocol),
+                _ => return Err(Error::new(ErrorKind::Protocol, "Invalid Value for enable push setting in settings frame")),
             },
             0x3 => settings.push(Setting::MaxConcurrentStreams(val)),
             0x4 => settings.push(Setting::InitialWindowSize(val)),
@@ -128,10 +127,9 @@ impl Into<Vec<u8>> for SettingsFrame {
 
 #[cfg(test)]
 mod test {
-    use std::error::Error;
     use super::{Setting, SettingsFrame};
     use frame::{ReadFrame, WriteFrame, FrameType};
-    use error::ConnectionError;
+    use error::ErrorKind;
 
     #[test]
     fn test_empty_settings_frame() {
@@ -185,7 +183,7 @@ mod test {
     fn test_invalid_enable_push_frame_error () {
         // enable_push value > 1
         let payload = [0, 2, 0, 0, 0, 100];
-        assert_eq!(SettingsFrame::from_raw(0, 0, &payload).unwrap_err(), ConnectionError::Protocol);
+        assert_eq!(SettingsFrame::from_raw(0, 0, &payload).unwrap_err().kind(), ErrorKind::Protocol);
     }
 
     #[test]
@@ -196,12 +194,12 @@ mod test {
         b.write_frame(frame.clone()).unwrap();
         assert_eq!(b, [0, 0, 6, 4, 1, 0, 0, 0, 0, 0, 2, 0, 0, 0, 1]);
         let mut sl = &b[..];
-        assert_eq!(sl.read_frame(1000).unwrap_err().description(), ConnectionError::FrameSize.description());
+        assert_eq!(sl.read_frame(1000).unwrap_err().kind(), ErrorKind::FrameSize);
     }
 
     #[test]
     fn test_wrong_stream_id_error() {
         let mut b = &vec![0, 0, 0, 4, 0, 0, 0, 0, 100][..];
-        assert_eq!(b.read_frame(1000).unwrap_err().description(), ConnectionError::Protocol.description());
+        assert_eq!(b.read_frame(1000).unwrap_err().kind(), ErrorKind::Protocol);
     }
 }

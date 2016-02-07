@@ -1,10 +1,9 @@
 mod setting;
 
 use std::io::{Read, Write};
-use std::io;
 use byteorder::{ByteOrder, BigEndian};
 use self::setting::SettingsFrame;
-use error::{Error, ConnectionError};
+use error::{Error, ErrorKind, Result};
 
 pub type Flags = u8;
 
@@ -31,7 +30,7 @@ enum FrameType {
 }
 
 pub trait ReadFrame: Read {
-    fn read_frame(&mut self, max_size: usize) -> Result<FrameType, Error> {
+    fn read_frame(&mut self, max_size: usize) -> Result<FrameType> {
         let mut buf = [0; 9];
         try!(self.read_exact(&mut buf));
         let payload_len = BigEndian::read_uint(&mut buf, 3) as usize;
@@ -40,7 +39,7 @@ pub trait ReadFrame: Read {
         let stream_id = BigEndian::read_u32(&mut buf[5..]) & !0x80000000;
 
         if payload_len > max_size {
-            return Err(Error::Connection(ConnectionError::FrameSize));
+            return Err(Error::new(ErrorKind::FrameSize, "payload length exceeds max frame size setting"));
         }
         let mut payload = vec![0; payload_len];
         try!(self.read_exact(&mut payload[..]));
@@ -56,7 +55,7 @@ pub trait ReadFrame: Read {
 impl<R: Read> ReadFrame for R {}
 
 pub trait WriteFrame: Write {
-    fn write_frame<F: Frame>(&mut self, frame: F) -> Result<(), Error> {
+    fn write_frame<F: Frame>(&mut self, frame: F) -> Result<()> {
         let mut buf = [0; 9];
         // write 24bit payload length
         BigEndian::write_uint(&mut buf, frame.payload_len() as u64, 3);

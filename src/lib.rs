@@ -7,29 +7,29 @@ mod error;
 mod connection;
 mod frame;
 
-use std::io::{Read, Write};
+use std::io::Read;
 use connection::Connection;
 
-pub use error::{Error, ConnectionError};
+use error::{Error, ErrorKind, Result};
 
 pub struct Server<C> {
     conn: C,
-    max_frame_size: u32,
+    //max_frame_size: u32,
 }
 
 impl<C: Connection> Server<C> {
     fn new(conn: C) -> Server<C> where C: Connection {
         Server {
             conn: conn,
-            max_frame_size: 2^14,
+            //max_frame_size: 2^14,
         }
     }
 
-    fn handle_preface(&mut self) -> Result<(), Error> {
+    fn handle_preface(&mut self) -> Result<()> {
         let mut buf = [0; 24];
         try!(self.conn.read(&mut buf)); // TODO read_exact
         if &buf != b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n" {
-            return Err(Error::Connection(ConnectionError::Protocol));
+            return Err(Error::new(ErrorKind::Protocol, "bad preface"));
         }
         Ok(())
     }
@@ -53,7 +53,6 @@ mod test {
     use std::io::{Read, Write};
     use super::mock::MockStream;
     use super::Server;
-    use error::Error;
 
     #[test]
     fn test_tcpstream_connect() {
