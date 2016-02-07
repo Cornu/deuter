@@ -6,6 +6,7 @@ mod mock;
 mod error;
 mod connection;
 mod frame;
+mod client;
 
 use std::io::Read;
 use connection::Connection;
@@ -33,17 +34,6 @@ impl<C: Connection> Server<C> {
         }
         Ok(())
     }
-
-    //fn read_frame(&mut self) -> ::Result<Frame> {
-        //let len = try!(self.conn.read_u24());
-        //let t = try!(self.conn.read_u8());
-        //let flags = try!(self.conn.read_u8());
-        //let stream_id = try!(self.conn.read_u32()) & !0x80000000;
-        //if len > self.max_frame_size {
-            //return Err(::Error::FrameSize);
-        //}
-        //Ok(Frame::Settings)
-    //}
 }
 
 #[cfg(test)]
@@ -53,6 +43,7 @@ mod test {
     use std::io::{Read, Write};
     use super::mock::MockStream;
     use super::Server;
+    use error::ErrorKind;
 
     #[test]
     fn test_tcpstream_connect() {
@@ -94,6 +85,6 @@ mod test {
         let mut server = Server::new(sconn);
         let preface = b"PRI * TTP/2.0\r\n\r\nSM\r\n\r\n";
         cconn.write(preface).unwrap();
-        assert!(server.handle_preface().is_err());
+        assert_eq!(server.handle_preface().unwrap_err().kind(), ErrorKind::Protocol);
     }
 }

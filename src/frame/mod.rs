@@ -1,4 +1,4 @@
-mod setting;
+pub mod setting;
 
 use std::io::{Read, Write};
 use byteorder::{ByteOrder, BigEndian};
@@ -15,7 +15,7 @@ trait Frame: Sized + Into<Vec<u8>> {
 }
 
 #[derive(Debug)]
-enum FrameType {
+pub enum FrameType {
     //Data,
     //Headers,
     //Priority,

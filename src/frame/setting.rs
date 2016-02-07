@@ -166,12 +166,12 @@ mod test {
         b.write_frame(frame.clone()).unwrap();
         assert_eq!(b, [0, 0, 0, 4, 1, 0, 0, 0, 0]);
         let mut sl = &b[..];
-        let res = match sl.read_frame(100).unwrap() {
-            FrameType::Settings(frame) => frame,
-            _ => panic!("Wrong frame type")
-        };
-        assert_eq!(frame, res);
-        assert!(frame.is_ack());
+        if let FrameType::Settings(res) = sl.read_frame(100).unwrap() {
+            assert_eq!(frame, res);
+            assert!(res.is_ack());
+        } else {
+            panic!("Wrong frame type")
+        }
     }
 
     #[test]
