@@ -18,8 +18,8 @@ pub enum ErrorKind {
     Protocol = 0x1,
     /// The endpoint encountered an unexpected internal error.
     Internal = 0x2,
-    // The endpoint detected that its peer violated the flow-control protocol.
-    //FlowControl = 0x3,
+    /// The endpoint detected that its peer violated the flow-control protocol.
+    FlowControl = 0x3,
     // The endpoint sent a SETTINGS frame but did not receive a response in a timely manner.
     //SettingsTimeout = 0x4,
     // The endpoint received a frame after a stream was half-closed.

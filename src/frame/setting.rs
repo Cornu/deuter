@@ -2,7 +2,11 @@ use byteorder::{ByteOrder, BigEndian};
 use frame::{Frame, Flags};
 use error::{Error, ErrorKind, Result};
 
-pub const FLAG_ACK: Flags = 0x1;
+const MAX_FLOW_CONTROL_WINDOW_SIZE : u32 = ::std::i32::MAX as u32;
+const MIN_FRAME_SIZE : u32 = 16384;
+const MAX_FRAME_SIZE : u32 = 16777215;
+
+pub const FLAG_ACK : Flags = 0x1;
 
 /// Settings Parameter according to rfc 6.5.2
 #[derive(Debug, Clone, PartialEq)]
@@ -10,7 +14,7 @@ pub enum Setting {
     HeaderTableSize(u32),
     EnablePush(bool),
     MaxConcurrentStreams(u32),
-    InitialWindowSize(u32),
+    InitialWindowSize(i32),
     MaxFrameSize(u32),
     MaxHeaderListSize(u32)
 }
@@ -57,7 +61,7 @@ impl SettingsFrame {
 
 fn parse_payload(payload: &[u8]) -> Result<Vec<Setting>> {
     if payload.len() % 6 != 0 {
-        return Err(Error::new(ErrorKind::FrameSize, "Settings Frame payload lengthmust be multiple of 6"));
+        return Err(Error::new(ErrorKind::FrameSize, "Settings Frame payload length must be multiple of 6"));
     }
     let n = payload.len() / 6;
     let mut settings = Vec::with_capacity(n);
@@ -73,8 +77,18 @@ fn parse_payload(payload: &[u8]) -> Result<Vec<Setting>> {
                 _ => return Err(Error::new(ErrorKind::Protocol, "Invalid Value for enable push setting in settings frame")),
             },
             0x3 => settings.push(Setting::MaxConcurrentStreams(val)),
-            0x4 => settings.push(Setting::InitialWindowSize(val)),
-            0x5 => settings.push(Setting::MaxFrameSize(val)),
+            0x4 => {
+                if val > MAX_FLOW_CONTROL_WINDOW_SIZE {
+                    return Err(Error::new(ErrorKind::FlowControl, "Initial window size must be lower than 2^31-1 octets in settings frame"));
+                }
+                settings.push(Setting::InitialWindowSize(val as i32))
+            },
+            0x5 => {
+                if val < MIN_FRAME_SIZE || val > MAX_FRAME_SIZE {
+                    return Err(Error::new(ErrorKind::Protocol, "Max frame size must be between 2^14 and 2^24-1 octets in settings frame"));
+                }
+                settings.push(Setting::MaxFrameSize(val))
+            },
             0x6 => settings.push(Setting::MaxHeaderListSize(val)),
             _ => continue
         }
@@ -114,7 +128,7 @@ impl Into<Vec<u8>> for SettingsFrame {
                 Setting::HeaderTableSize(val) => (0x1, val),
                 Setting::EnablePush(val) => (0x2, val as u32),
                 Setting::MaxConcurrentStreams(val) => (0x3, val),
-                Setting::InitialWindowSize(val) => (0x4, val),
+                Setting::InitialWindowSize(val) => (0x4, val as u32),
                 Setting::MaxFrameSize(val) => (0x5, val),
                 Setting::MaxHeaderListSize(val) => (0x6, val),
             };
@@ -167,7 +181,7 @@ mod test {
         frame.add_setting(Setting::EnablePush(false));
         frame.add_setting(Setting::MaxConcurrentStreams(100));
         frame.add_setting(Setting::InitialWindowSize(100));
-        frame.add_setting(Setting::MaxFrameSize(100));
+        frame.add_setting(Setting::MaxFrameSize(100000));
         frame.add_setting(Setting::MaxHeaderListSize(100));
         let mut b = Vec::new();
         b.write_frame(frame.clone()).unwrap();
@@ -177,13 +191,6 @@ mod test {
             _ => panic!("Wrong frame type")
         };
         assert_eq!(frame, res);
-    }
-
-    #[test]
-    fn test_invalid_enable_push_frame_error () {
-        // enable_push value > 1
-        let payload = [0, 2, 0, 0, 0, 100];
-        assert_eq!(SettingsFrame::from_raw(0, 0, &payload).unwrap_err().kind(), ErrorKind::Protocol);
     }
 
     #[test]
@@ -201,5 +208,26 @@ mod test {
     fn test_wrong_stream_id_error() {
         let mut b = &vec![0, 0, 0, 4, 0, 0, 0, 0, 100][..];
         assert_eq!(b.read_frame(1000).unwrap_err().kind(), ErrorKind::Protocol);
+    }
+
+    #[test]
+    fn test_invalid_enable_push_frame_error () {
+        // enable_push value > 1
+        let payload = [0, 2, 0, 0, 0, 100];
+        assert_eq!(SettingsFrame::from_raw(0, 0, &payload).unwrap_err().kind(), ErrorKind::Protocol);
+    }
+
+    #[test]
+    fn test_invalid_initial_window_size() {
+        let payload = [0, 4, 129, 255, 255, 255];
+        assert_eq!(SettingsFrame::from_raw(0, 0, &payload).unwrap_err().kind(), ErrorKind::FlowControl);
+    }
+
+    #[test]
+    fn test_invalid_max_frame_size() {
+        let mut payload = [0, 5, 0, 0, 0, 10];
+        assert_eq!(SettingsFrame::from_raw(0, 0, &payload).unwrap_err().kind(), ErrorKind::Protocol);
+        payload = [0, 5, 255, 255, 255, 255];
+        assert_eq!(SettingsFrame::from_raw(0, 0, &payload).unwrap_err().kind(), ErrorKind::Protocol);
     }
 }
