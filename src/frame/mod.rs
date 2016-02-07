@@ -15,6 +15,7 @@ trait Frame: Sized + Into<Vec<u8>> {
     fn stream_id(&self) -> u32;
 }
 
+#[derive(Debug)]
 enum FrameType {
     //Data,
     //Headers,

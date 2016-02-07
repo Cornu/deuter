@@ -25,11 +25,14 @@ pub struct SettingsFrame {
 impl SettingsFrame {
     pub fn from_raw(stream_id: u32, flags: u8, payload: &[u8]) -> Result<SettingsFrame, ConnectionError> {
         if stream_id != 0 {
-            return Err(ConnectionError::Protocol)
+            return Err(ConnectionError::Protocol);
         }
         let mut frame: Self = Default::default();
         if flags & FlagAck != 0 {
             frame.ack = true;
+            if !payload.is_empty() {
+                return Err(ConnectionError::FrameSize);
+            }
         }
         if !payload.is_empty() {
             frame.settings = try!(parse_payload(payload));
@@ -125,8 +128,10 @@ impl Into<Vec<u8>> for SettingsFrame {
 
 #[cfg(test)]
 mod test {
+    use std::error::Error;
     use super::{Setting, SettingsFrame};
     use frame::{ReadFrame, WriteFrame, FrameType};
+    use error::ConnectionError;
 
     #[test]
     fn test_empty_settings_frame() {
@@ -174,5 +179,29 @@ mod test {
             _ => panic!("Wrong frame type")
         };
         assert_eq!(frame, res);
+    }
+
+    #[test]
+    fn test_invalid_enable_push_frame_error () {
+        // enable_push value > 1
+        let payload = [0, 2, 0, 0, 0, 100];
+        assert_eq!(SettingsFrame::from_raw(0, 0, &payload).unwrap_err(), ConnectionError::Protocol);
+    }
+
+    #[test]
+    fn test_ack_and_payload_error() {
+        let mut frame = SettingsFrame::ack();
+        frame.add_setting(Setting::EnablePush(true));
+        let mut b = Vec::new();
+        b.write_frame(frame.clone()).unwrap();
+        assert_eq!(b, [0, 0, 6, 4, 1, 0, 0, 0, 0, 0, 2, 0, 0, 0, 1]);
+        let mut sl = &b[..];
+        assert_eq!(sl.read_frame(1000).unwrap_err().description(), ConnectionError::FrameSize.description());
+    }
+
+    #[test]
+    fn test_wrong_stream_id_error() {
+        let mut b = &vec![0, 0, 0, 4, 0, 0, 0, 0, 100][..];
+        assert_eq!(b.read_frame(1000).unwrap_err().description(), ConnectionError::Protocol.description());
     }
 }
