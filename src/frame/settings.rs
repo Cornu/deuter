@@ -50,12 +50,19 @@ impl SettingsFrame {
         }
     }
 
+    #[inline]
     pub fn add_setting(&mut self, set: Setting) {
         self.settings.push(set);
     }
 
+    #[inline]
     pub fn is_ack(&self) -> bool {
         self.ack
+    }
+
+    #[inline]
+    pub fn settings(self) -> Vec<Setting> {
+        self.settings
     }
 }
 

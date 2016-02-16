@@ -1,8 +1,8 @@
-pub mod setting;
+pub mod settings;
 
 use std::io::{Read, Write};
 use byteorder::{ByteOrder, BigEndian};
-use self::setting::SettingsFrame;
+use self::settings::SettingsFrame;
 use error::{Error, ErrorKind, Result};
 
 pub type Flags = u8;
