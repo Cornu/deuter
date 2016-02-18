@@ -8,10 +8,7 @@ use error::{Error, ErrorKind, Result};
 pub type Flags = u8;
 
 trait Frame: Sized + Into<Vec<u8>> {
-    fn payload_len(&self) -> usize;
-    fn frame_type(&self) -> u8;
-    fn flags(&self) -> u8;
-    fn stream_id(&self) -> u32;
+    fn size(&self) -> usize;
 }
 
 #[derive(Debug)]
@@ -56,15 +53,7 @@ impl<R: Read> ReadFrame for R {}
 
 pub trait WriteFrame: Write {
     fn write_frame<F: Frame>(&mut self, frame: F) -> Result<()> {
-        let mut buf = [0; 9];
-        // write 24bit payload length
-        BigEndian::write_uint(&mut buf, frame.payload_len() as u64, 3);
-        buf[3] = frame.frame_type();
-        buf[4] = frame.flags();
-        BigEndian::write_u32(&mut buf[5..], frame.stream_id());
-        try!(self.write_all(&buf[..]));
-        try!(self.write_all(&mut frame.into()[..]));
-        Ok(())
+        self.write_all(frame.into().as_ref()).map_err(|e| From::from(e))
     }
 }
 

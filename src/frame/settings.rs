@@ -2,6 +2,8 @@ use byteorder::{ByteOrder, BigEndian};
 use frame::{Frame, Flags};
 use error::{Error, ErrorKind, Result};
 
+const FRAME_TYPE : u8 = 0x4;
+
 const MAX_FLOW_CONTROL_WINDOW_SIZE : u32 = ::std::i32::MAX as u32;
 const MIN_FRAME_SIZE : u32 = 16384;
 const MAX_FRAME_SIZE : u32 = 16777215;
@@ -64,6 +66,31 @@ impl SettingsFrame {
     pub fn settings(self) -> Vec<Setting> {
         self.settings
     }
+
+    fn write_header(&self, buf: &mut [u8]) {
+        // write 24bit payload length
+        BigEndian::write_uint(buf, self.size() as u64, 3);
+        buf[3] = FRAME_TYPE;
+        // only ack flag
+        buf[4] = self.ack as u8;
+        // write fixed stream id 0
+        BigEndian::write_u32(&mut buf[5..], 0);
+    }
+
+    fn write_payload(&self, buf: &mut [u8]) {
+        for (i, setting) in self.settings.iter().enumerate() {
+            let (id, val) = match *setting {
+                Setting::HeaderTableSize(val) => (0x1, val),
+                Setting::EnablePush(val) => (0x2, val as u32),
+                Setting::MaxConcurrentStreams(val) => (0x3, val),
+                Setting::InitialWindowSize(val) => (0x4, val as u32),
+                Setting::MaxFrameSize(val) => (0x5, val),
+                Setting::MaxHeaderListSize(val) => (0x6, val),
+            };
+            BigEndian::write_u16(&mut buf[i*6..], id);
+            BigEndian::write_u32(&mut buf[i*6+2..], val);
+        }
+    }
 }
 
 fn parse_payload(payload: &[u8]) -> Result<Vec<Setting>> {
@@ -104,44 +131,19 @@ fn parse_payload(payload: &[u8]) -> Result<Vec<Setting>> {
 }
 
 impl Frame for SettingsFrame {
+    /// return the frame size without fixed header (9 bytes)
     #[inline]
-    fn payload_len(&self) -> usize {
+    fn size(&self) -> usize {
         // each settings consists of an 2 byte identifier and 4 byte value
         6 * self.settings.len()
-    }
-
-    #[inline]
-    fn frame_type(&self) -> u8 {
-        0x4
-    }
-
-    #[inline]
-    fn flags(&self) -> u8 {
-        self.ack as u8
-    }
-
-    #[inline]
-    fn stream_id(&self) -> u32 {
-        // stream identifier for a settings frame must be zero
-        0
     }
 }
 
 impl Into<Vec<u8>> for SettingsFrame {
     fn into(self) -> Vec<u8> {
-        let mut buf = vec![0; self.payload_len()];
-        for (i, setting) in self.settings.iter().enumerate() {
-            let (id, val) = match *setting {
-                Setting::HeaderTableSize(val) => (0x1, val),
-                Setting::EnablePush(val) => (0x2, val as u32),
-                Setting::MaxConcurrentStreams(val) => (0x3, val),
-                Setting::InitialWindowSize(val) => (0x4, val as u32),
-                Setting::MaxFrameSize(val) => (0x5, val),
-                Setting::MaxHeaderListSize(val) => (0x6, val),
-            };
-            BigEndian::write_u16(&mut buf[i*6..], id);
-            BigEndian::write_u32(&mut buf[i*6+2..], val);
-        }
+        let mut buf = vec![0; self.size() + 9];
+        self.write_header(&mut buf);
+        self.write_payload(&mut buf[9..]);
         buf
     }
 }
