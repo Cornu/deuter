@@ -1,5 +1,6 @@
 use byteorder::{ByteOrder, BigEndian};
-use frame::{Frame, Flags};
+use std::io::Read;
+use frame::{Frame, FrameHeader, Flags};
 use error::{Error, ErrorKind, Result};
 
 const FRAME_TYPE : u8 = 0x4;
@@ -28,20 +29,20 @@ pub struct SettingsFrame {
 }
 
 impl SettingsFrame {
-    pub fn from_raw(stream_id: u32, flags: u8, payload: &[u8]) -> Result<SettingsFrame> {
-        if stream_id != 0 {
+    pub fn from_raw<R: Read>(header: FrameHeader, mut readr: R) -> Result<SettingsFrame> {
+        if header.stream_id != 0 {
             return Err(Error::new(ErrorKind::Protocol, "The stream identifier for a settings frame must be zero"));
         }
         let mut frame: Self = Default::default();
-        if flags & FLAG_ACK != 0 {
+        if header.flags & FLAG_ACK != 0 {
             frame.ack = true;
-            if !payload.is_empty() {
+            if header.payload_len != 0 {
                 return Err(Error::new(ErrorKind::FrameSize, "Settings Frame with Ack Flag must be empty"));
             }
         }
-        if !payload.is_empty() {
-            frame.settings = try!(parse_payload(payload));
-        }
+        let mut payload = vec![0; header.payload_len];
+        try!(readr.read_exact(payload.as_mut()));
+        frame.settings = try!(parse_payload(payload.as_ref()));
         Ok(frame)
     }
 
@@ -150,9 +151,18 @@ impl Into<Vec<u8>> for SettingsFrame {
 
 #[cfg(test)]
 mod test {
+    use std::io::Cursor;
     use super::{Setting, SettingsFrame};
-    use frame::{ReadFrame, WriteFrame, FrameType};
+    use super::super::super::StreamId;
+    use frame::{ReadFrame, FrameHeader, WriteFrame, FrameType};
     use error::ErrorKind;
+
+    const SINGLE_FRAME_HEADER : FrameHeader = FrameHeader{
+        payload_len: 6,
+        frame_type: 0x4,
+        flags: 0,
+        stream_id: StreamId(0),
+    };
 
     #[test]
     fn test_empty_settings_frame() {
@@ -222,21 +232,21 @@ mod test {
     #[test]
     fn test_invalid_enable_push_frame_error () {
         // enable_push value > 1
-        let payload = [0, 2, 0, 0, 0, 100];
-        assert_eq!(SettingsFrame::from_raw(0, 0, &payload).unwrap_err().kind(), ErrorKind::Protocol);
+        let payload = Cursor::new([0, 2, 0, 0, 0, 100]);
+        assert_eq!(SettingsFrame::from_raw(SINGLE_FRAME_HEADER, payload).unwrap_err().kind(), ErrorKind::Protocol);
     }
 
     #[test]
     fn test_invalid_initial_window_size() {
-        let payload = [0, 4, 129, 255, 255, 255];
-        assert_eq!(SettingsFrame::from_raw(0, 0, &payload).unwrap_err().kind(), ErrorKind::FlowControl);
+        let payload = Cursor::new([0, 4, 129, 255, 255, 255]);
+        assert_eq!(SettingsFrame::from_raw(SINGLE_FRAME_HEADER, payload).unwrap_err().kind(), ErrorKind::FlowControl);
     }
 
     #[test]
     fn test_invalid_max_frame_size() {
-        let mut payload = [0, 5, 0, 0, 0, 10];
-        assert_eq!(SettingsFrame::from_raw(0, 0, &payload).unwrap_err().kind(), ErrorKind::Protocol);
-        payload = [0, 5, 255, 255, 255, 255];
-        assert_eq!(SettingsFrame::from_raw(0, 0, &payload).unwrap_err().kind(), ErrorKind::Protocol);
+        let mut payload = Cursor::new([0, 5, 0, 0, 0, 10]);
+        assert_eq!(SettingsFrame::from_raw(SINGLE_FRAME_HEADER, payload).unwrap_err().kind(), ErrorKind::Protocol);
+        payload = Cursor::new([0, 5, 255, 255, 255, 255]);
+        assert_eq!(SettingsFrame::from_raw(SINGLE_FRAME_HEADER, payload).unwrap_err().kind(), ErrorKind::Protocol);
     }
 }

@@ -10,6 +10,13 @@ mod client;
 
 use frame::settings::{Setting, SettingsFrame};
 
+#[derive(PartialEq)]
+pub struct StreamId(u32);
+
+impl PartialEq<u32> for StreamId {
+    fn eq(&self, other: &u32) -> bool { self.0 == *other }
+}
+
 pub struct Settings {
     pub header_table_size: u32,
     pub enable_push: bool,
