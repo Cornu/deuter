@@ -1,3 +1,4 @@
+#[macro_use] extern crate bitflags;
 extern crate byteorder;
 
 #[cfg(test)]
@@ -10,11 +11,19 @@ mod client;
 
 use frame::settings::{Setting, SettingsFrame};
 
-#[derive(PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct StreamId(u32);
 
 impl PartialEq<u32> for StreamId {
     fn eq(&self, other: &u32) -> bool { self.0 == *other }
+}
+
+impl Into<u32> for StreamId {
+    fn into(self) -> u32 { self.0 }
+}
+
+impl From<u32> for StreamId {
+    fn from(n: u32) -> Self { StreamId(n & 0x7FFFFFFF) }
 }
 
 pub struct Settings {

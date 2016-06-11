@@ -5,3 +5,4 @@ authors = ["Hans-Harro Horn <h.h.horn@gmail.com>"]
 
 [dependencies]
 byteorder = "*"
+bitflags = "*"

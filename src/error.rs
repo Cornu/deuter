@@ -51,6 +51,16 @@ impl Error {
         }
     }
 
+    pub fn protocol<E>(error: E) -> Error
+        where E: Into<Box<error::Error>> {
+        Self::new(ErrorKind::Protocol, error)
+    }
+
+    pub fn frame_size<E>(error: E) -> Error
+        where E: Into<Box<error::Error>> {
+        Self::new(ErrorKind::FrameSize, error)
+    }
+
     #[inline]
     pub fn kind(&self) -> ErrorKind {
         self.kind

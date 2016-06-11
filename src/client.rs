@@ -1,7 +1,7 @@
 use connection::Connection;
 use error::{Error, ErrorKind, Result};
 use frame::settings::{SettingsFrame, Setting};
-use frame::{FrameType, WriteFrame, ReadFrame};
+use frame::{FrameKind, WriteFrame, ReadFrame};
 use {Settings, WindowSize};
 
 pub struct Client<C> {
@@ -38,7 +38,7 @@ impl<C: Connection> Client<C> {
     /// first received frame must be a valid settings frame
     fn receive_preface(&mut self) -> Result<()> {
         // read settings frame
-        if let FrameType::Settings(frame) = try!(self.conn.read_frame(100)) {
+        if let FrameKind::Settings(frame) = try!(self.conn.read_frame(100)) {
             if frame.is_ack() {
                 return Err(Error::new(ErrorKind::Protocol, "Invalid Preface, received ACK"));
             }
@@ -50,7 +50,7 @@ impl<C: Connection> Client<C> {
 
     fn handle_next(&mut self) -> Result<()> {
         match try!(self.conn.read_frame(100)) {
-            FrameType::Settings(frame) => println!("Settings"),
+            FrameKind::Settings(frame) => println!("Settings"),
             // Unknown
             _ => return Ok(())
         }
@@ -67,7 +67,7 @@ mod test {
     use std::io::Read;
     use mock::MockStream;
     use super::Client;
-    use frame::{FrameType, ReadFrame, WriteFrame};
+    use frame::{FrameKind, ReadFrame, WriteFrame};
     use frame::settings::SettingsFrame;
 
     #[test]
@@ -80,7 +80,7 @@ mod test {
         let preface = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
         assert_eq!(&buf, preface);
         // settings frame
-        if let FrameType::Settings(res) = sconn.read_frame(100).unwrap() {
+        if let FrameKind::Settings(res) = sconn.read_frame(100).unwrap() {
             assert!(!res.is_ack());
         } else {
             panic!("Wrong frame type")
