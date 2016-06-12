@@ -43,7 +43,7 @@ impl PriorityFrame {
 
     pub fn read<R: Read>(header: FrameHeader, mut reader: R) -> Result<Self> {
         if header.stream_id == 0 {
-            return Err(Error::protocol(format!("Bad '{:?}'! The stream identifier for a priority frame must not be zero", header.stream_id)));
+            return Err(Error::protocol("Priority frame must be associated with a stream, stream id was zero"));
         }
         if header.payload_len != PRIORITY_PAYLOAD_LENGTH {
             return Err(Error::frame_size(format!("Bad payload length '{:?}'! The payload length for a priority frame must be 5 octets", header.payload_len)));

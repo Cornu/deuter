@@ -7,12 +7,11 @@ use byteorder::{ByteOrder, BigEndian};
 use error::{Error, ErrorKind, Result};
 use super::StreamId;
 use self::settings::SettingsFrame;
-use self::headers::HeadersFrame;
+use self::headers::{HeadersFrame, TYPE_HEADERS};
 use self::priority::{PriorityFrame, TYPE_PRIORITY};
 
 pub type FrameType = u8;
 
-const TYPE_HEADERS  : FrameType = 0x1;
 const TYPE_SETTINGS : FrameType = 0x4;
 
 bitflags! {
@@ -87,6 +86,7 @@ impl FrameHeader {
 
 pub trait ReadFrame: Read + Sized {
     fn read_frame(&mut self, max_size: usize) -> Result<FrameKind> {
+        // TODO use Read::take()
         let header = try!(FrameHeader::read(self.by_ref()));
         println!("{:?}", header);
         if header.payload_len > max_size {

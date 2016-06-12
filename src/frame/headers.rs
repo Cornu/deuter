@@ -1,9 +1,11 @@
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use StreamId;
-use frame::{Frame, FrameHeader, Flags, FLAG_PADDED, FLAG_PRIORITY, TYPE_HEADERS};
+use frame::{Frame, FrameHeader, FrameType, Flags, FLAG_PADDED, FLAG_PRIORITY};
 use frame::priority::PriorityFrame;
 use error::{Error, ErrorKind, Result};
+
+pub const TYPE_HEADERS  : FrameType = 0x1;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum HeaderBlock {
@@ -32,7 +34,7 @@ pub struct HeadersFrame {
 impl HeadersFrame {
     pub fn read<R: Read>(header: FrameHeader, mut reader: R) -> Result<HeadersFrame> {
         if header.stream_id == 0 {
-            return Err(Error::new(ErrorKind::Protocol, "Headers frames must be associated with a stream, stream id was zero"));
+            return Err(Error::protocol("Headers frame must be associated with a stream, stream id was zero"));
         }
         let mut frame: Self = Default::default();
         frame.stream_id = header.stream_id;
@@ -50,7 +52,7 @@ impl HeadersFrame {
         }
         let fragment = vec![0; payload_len];
         frame.headers = HeaderBlock::Fragment(fragment);
-        // TODO read fragment
+        // TODO read, discard padding
         Ok(frame)
     }
 
