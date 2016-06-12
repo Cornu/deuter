@@ -8,11 +8,11 @@ use error::{Error, ErrorKind, Result};
 use super::StreamId;
 use self::settings::SettingsFrame;
 use self::headers::HeadersFrame;
+use self::priority::{PriorityFrame, TYPE_PRIORITY};
 
-type FrameType = u8;
+pub type FrameType = u8;
 
 const TYPE_HEADERS  : FrameType = 0x1;
-const TYPE_PRIORITY : FrameType = 0x2;
 const TYPE_SETTINGS : FrameType = 0x4;
 
 bitflags! {
@@ -34,7 +34,7 @@ pub trait Frame: Sized {
 pub enum FrameKind {
     //Data,
     Headers(HeadersFrame),
-    //Priority,
+    Priority(PriorityFrame),
     //RstConn,
     Settings(SettingsFrame),
     //PushPromise,
@@ -95,6 +95,7 @@ pub trait ReadFrame: Read + Sized {
         match header.frame_type {
             TYPE_HEADERS  => Ok(FrameKind::Headers(try!(HeadersFrame::read(header, self)))),
             TYPE_SETTINGS => Ok(FrameKind::Settings(try!(SettingsFrame::read(header, self)))),
+            TYPE_PRIORITY => Ok(FrameKind::Priority(try!(PriorityFrame::read(header, self)))),
             // TODO read and discard unknown frame payload
             _  => Ok(FrameKind::Unknown),
         }
