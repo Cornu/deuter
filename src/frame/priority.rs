@@ -6,8 +6,8 @@ use error::{Error, Result};
 
 pub const TYPE_PRIORITY : FrameType = 0x2;
 
+pub const PRIORITY_PAYLOAD_LENGTH : usize = 5;
 const DEFAULT_WEIGHT : u8 = 16;
-const PRIORITY_PAYLOAD_LENGTH : usize = 5;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct PriorityFrame {
