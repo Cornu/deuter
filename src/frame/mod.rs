@@ -53,15 +53,6 @@ pub struct FrameHeader {
 }
 
 impl FrameHeader {
-    fn new(payload_len: usize, frame_type: FrameType, flags: Flags, stream_id: StreamId) -> Self {
-        FrameHeader {
-            payload_len: payload_len,
-            frame_type: frame_type,
-            flags: flags,
-            stream_id: stream_id,
-        }
-    }
-
     fn read<R: Read>(mut reader: R) -> Result<FrameHeader> {
         let mut buf = [0; 9];
         try!(reader.read_exact(&mut buf));

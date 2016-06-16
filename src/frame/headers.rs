@@ -1,25 +1,15 @@
-use std::collections::HashMap;
 use std::io::{Read, Write};
 use StreamId;
 use frame::{Frame, FrameHeader, FrameType, Flags, FLAG_PADDED, FLAG_PRIORITY, FLAG_END_HEADERS, FLAG_END_STREAM};
 use frame::priority::{PriorityFrame, PRIORITY_PAYLOAD_LENGTH};
-use error::{Error, ErrorKind, Result};
+use error::{Error, Result};
 
 pub const TYPE_HEADERS  : FrameType = 0x1;
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum HeaderBlock {
-    Decoded(Vec<Header>),
-    Fragment(Vec<u8>)
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Header(Vec<u8>, Vec<u8>);
-
-#[derive(Debug, Clone, PartialEq)]
 pub struct HeadersFrame {
     stream_id: StreamId,
-    headers: HeaderBlock,
+    fragment: Vec<u8>,
     priority: Option<PriorityFrame>,
     end_headers: bool,
     end_stream: bool,
@@ -29,7 +19,7 @@ impl HeadersFrame {
     pub fn new(stream_id: StreamId) -> Self {
         HeadersFrame {
             stream_id: stream_id,
-            headers: HeaderBlock::Decoded(Vec::new()),
+            fragment: Vec::new(),
             priority: None,
             end_headers: false,
             end_stream: false,
@@ -41,6 +31,21 @@ impl HeadersFrame {
         self
     }
 
+    fn fragment<T: Into<Vec<u8>>>(mut self, fragment: T) -> Self {
+        self.fragment = fragment.into();
+        self
+    }
+
+    fn end_headers(mut self) -> Self {
+        self.end_headers = true;
+        self
+    }
+
+    fn end_stream(mut self) -> Self {
+        self.end_stream = true;
+        self
+    }
+
     pub fn read<R: Read>(header: FrameHeader, mut reader: R) -> Result<HeadersFrame> {
         if header.stream_id == 0 {
             return Err(Error::protocol("Headers frame must be associated with a stream, stream id was zero"));
@@ -48,11 +53,12 @@ impl HeadersFrame {
 
         let mut payload_len = header.payload_len;
 
+        let mut pad_len = 0;
         if header.flags.contains(FLAG_PADDED) {
             let mut buf = [0; 1];
             try!(reader.read_exact(&mut buf));
-            let pad_len = buf[0] as usize;
-            payload_len -= pad_len;
+            pad_len = buf[0] as usize;
+            payload_len -= pad_len + 1;
         }
 
         let mut priority = None;
@@ -63,10 +69,16 @@ impl HeadersFrame {
 
         let mut fragment = vec![0; payload_len];
         try!(reader.read_exact(&mut fragment));
-        // TODO read, discard padding
+
+        // read, discard padding
+        if header.flags.contains(FLAG_PADDED) {
+            let mut padding = vec![0; pad_len];
+            try!(reader.read_exact(&mut padding));
+        }
+
         Ok(HeadersFrame {
             stream_id: header.stream_id,
-            headers: HeaderBlock::Fragment(fragment),
+            fragment: fragment,
             priority: priority,
             end_headers: header.flags.contains(FLAG_END_HEADERS),
             end_stream: header.flags.contains(FLAG_END_STREAM),
@@ -76,9 +88,14 @@ impl HeadersFrame {
 
 impl Frame for HeadersFrame {
     fn header(&self) -> FrameHeader {
-        // TODO len and flags
-        let mut len = 0;
+        let mut len = self.fragment.len();
         let mut flags = Flags::empty();
+        if self.end_headers {
+            flags.insert(FLAG_END_HEADERS);
+        }
+        if self.end_stream {
+            flags.insert(FLAG_END_STREAM);
+        }
         if let Some(_) = self.priority {
             flags.insert(FLAG_PRIORITY);
             len += PRIORITY_PAYLOAD_LENGTH;
@@ -92,29 +109,26 @@ impl Frame for HeadersFrame {
     }
 
     fn write<W: Write>(self, writer: &mut W) -> Result<()> {
-        // TODO write headers
+        // TODO padding
         if let Some(priority) = self.priority {
-            priority.write(writer);
+            try!(priority.write(writer));
         }
-        match self.headers {
-            HeaderBlock::Fragment(fragment) => try!(writer.write(fragment.as_ref())),
-            _ => return Err(Error::internal("Unencoded Header Fragment, must be encoded")),
-        };
+        try!(writer.write(self.fragment.as_ref()));
         Ok(())
     }
 }
 
 #[cfg(test)]
 mod test {
-    use super::{HeadersFrame, HeaderBlock};
+    use std::io::Read;
+    use super::HeadersFrame;
     use StreamId;
-    use frame::{ReadFrame, WriteFrame, FrameKind, FLAG_PRIORITY};
+    use frame::{ReadFrame, WriteFrame, FrameKind};
     use frame::priority::PriorityFrame;
 
     #[test]
     fn test_empty_headers_frame() {
-        let mut frame = HeadersFrame::new(StreamId(1));
-        frame.headers = HeaderBlock::Fragment(Vec::new());
+        let frame = HeadersFrame::new(StreamId(1));
         let mut b = Vec::new();
         b.write_frame(frame.clone()).unwrap();
         assert_eq!(b, [0, 0, 0, 1, 0, 0, 0, 0, 1]);
@@ -129,8 +143,7 @@ mod test {
     #[test]
     fn test_priority_headers_frame() {
         let priority = PriorityFrame::new(StreamId(1));
-        let mut frame = HeadersFrame::new(StreamId(1)).priority(priority);
-        frame.headers = HeaderBlock::Fragment(Vec::new());
+        let frame = HeadersFrame::new(StreamId(1)).priority(priority);
         let mut b = Vec::new();
         b.write_frame(frame.clone()).unwrap();
         assert_eq!(b, [0, 0, 5,       // length
@@ -145,6 +158,64 @@ mod test {
             _ => panic!("Wrong frame type")
         };
         assert_eq!(frame, res);
+    }
+
+    #[test]
+    fn test_fragment_in_headers_frame() {
+        let fragment = vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+        let frame = HeadersFrame::new(StreamId(1)).fragment(fragment);
+        let mut b = Vec::new();
+        b.write_frame(frame.clone()).unwrap();
+        assert_eq!(b, [0, 0, 10,     // length
+                       1,            // type
+                       0,            // flags
+                       0, 0, 0, 1,   // stream id
+                       0, 1, 2, 3, 4, 5, 6, 7, 8, 9]); // fragment
+        let mut sl = &b[..];
+        let res = match sl.read_frame(100).unwrap() {
+            FrameKind::Headers(frame) => frame,
+            _ => panic!("Wrong frame type")
+        };
+        assert_eq!(frame, res);
+    }
+
+    #[test]
+    fn test_flags_in_headers_frame() {
+        let frame = HeadersFrame::new(StreamId(1)).end_headers().end_stream();
+        let mut b = Vec::new();
+        b.write_frame(frame.clone()).unwrap();
+        assert_eq!(b, [0, 0, 0,     // length
+                       1,            // type
+                       5,            // flags
+                       0, 0, 0, 1]); // stream id
+        let mut sl = &b[..];
+        let res = match sl.read_frame(100).unwrap() {
+            FrameKind::Headers(frame) => frame,
+            _ => panic!("Wrong frame type")
+        };
+        assert_eq!(frame, res);
+    }
+
+    #[test]
+    fn test_padding_headers_frame() {
+        let b = vec![0, 0, 8,          // length
+                     1,                // type
+                     8,                // flags
+                     0, 0, 0, 1,       // stream id
+                     3,                // padding length
+                     0, 1, 2, 3,       // fragment
+                     0xFF, 0xFF, 0xFF, // padding
+                     4, 4, 4, 4, 4,    // make sure we can read further
+                    ];
+        let mut sl = &b[..];
+        let res = match sl.read_frame(100).unwrap() {
+            FrameKind::Headers(frame) => frame,
+            _ => panic!("Wrong frame type")
+        };
+        assert_eq!(res.fragment, [0, 1, 2, 3]);
+        let mut buf = [0; 4];
+        sl.read_exact(&mut buf).unwrap();
+        assert_eq!(buf, [4, 4, 4, 4]);
     }
 }
 

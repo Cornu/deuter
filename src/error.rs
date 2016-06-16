@@ -56,11 +56,6 @@ impl Error {
         Self::new(ErrorKind::Protocol, error)
     }
 
-    pub fn internal<E>(error: E) -> Error
-        where E: Into<Box<error::Error>> {
-        Self::new(ErrorKind::Internal, error)
-    }
-
     pub fn frame_size<E>(error: E) -> Error
         where E: Into<Box<error::Error>> {
         Self::new(ErrorKind::FrameSize, error)

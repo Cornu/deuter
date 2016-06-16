@@ -107,7 +107,7 @@ impl SettingsFrame {
 
     fn write_payload<W: Write>(&self, mut writer: W) -> Result<()> {
         let mut buf = [0; 6];
-        for (i, setting) in self.settings.iter().enumerate() {
+        for setting in self.settings.iter() {
             let (id, val) = match *setting {
                 Setting::HeaderTableSize(val) => (0x1, val),
                 Setting::EnablePush(val) => (0x2, val as u32),

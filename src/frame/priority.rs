@@ -94,13 +94,14 @@ impl Frame for PriorityFrame {
 #[cfg(test)]
 mod test {
     use std::io::Cursor;
+    use StreamId;
     use super::PriorityFrame;
     use frame::{ReadFrame, WriteFrame, FrameKind};
     use error::ErrorKind;
 
     #[test]
     fn test_default_frame() {
-        let frame = PriorityFrame::new(1.into());
+        let frame = PriorityFrame::new(StreamId(1));
         assert!(!frame.is_exclusive());
         assert_eq!(frame.weight, 16);
         let mut b : Vec<u8> = Vec::new();
@@ -120,14 +121,14 @@ mod test {
 
     #[test]
     fn test_exclusive_priority() {
-        let frame = PriorityFrame::new(1.into()).exclusive();
+        let frame = PriorityFrame::new(StreamId(1)).dependency(StreamId(2)).exclusive();
         let mut b : Vec<u8> = Vec::new();
         b.write_frame(frame.clone()).unwrap();
         assert_eq!(b, [0, 0, 5,      // length
                        2,            // type
                        0,            // flags
                        0, 0, 0, 1,   // stream id
-                       128, 0, 0, 0, // dependency
+                       128, 0, 0, 2, // dependency
                        15]);         // weight
         let mut sl = &b[..];
         match sl.read_frame(100).unwrap() {
