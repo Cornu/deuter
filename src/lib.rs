@@ -1,13 +1,19 @@
-#[macro_use] extern crate bitflags;
+#[macro_use]
+extern crate log;
+#[macro_use]
+extern crate bitflags;
 extern crate byteorder;
+extern crate mio;
 
-#[cfg(test)]
-mod mock;
+//#[cfg(test)]
+//mod mock;
 
 mod error;
 mod connection;
 mod frame;
-mod client;
+mod server;
+//mod client;
+pub mod buffer;
 
 use frame::settings::{Setting, SettingsFrame};
 
@@ -15,15 +21,21 @@ use frame::settings::{Setting, SettingsFrame};
 pub struct StreamId(u32);
 
 impl PartialEq<u32> for StreamId {
-    fn eq(&self, other: &u32) -> bool { self.0 == *other }
+    fn eq(&self, other: &u32) -> bool {
+        self.0 == *other
+    }
 }
 
 impl Into<u32> for StreamId {
-    fn into(self) -> u32 { self.0 }
+    fn into(self) -> u32 {
+        self.0
+    }
 }
 
 impl From<u32> for StreamId {
-    fn from(n: u32) -> Self { StreamId(n & 0x7FFFFFFF) }
+    fn from(n: u32) -> Self {
+        StreamId(n & 0x7FFFFFFF)
+    }
 }
 
 pub struct Settings {
@@ -32,7 +44,7 @@ pub struct Settings {
     pub max_concurrent_streams: Option<u32>,
     pub initial_window_size: i32,
     pub max_frame_size: u32,
-    pub max_header_list_size: Option<u32>
+    pub max_header_list_size: Option<u32>,
 }
 
 impl Settings {
@@ -69,7 +81,7 @@ pub struct WindowSize(i32);
 impl WindowSize {
     fn available(&self) -> usize {
         if self.0.is_negative() {
-            return 0
+            return 0;
         }
         self.0 as usize
     }

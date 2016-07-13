@@ -13,16 +13,14 @@ impl MockStream {
     pub fn new() -> (MockStream, MockStream) {
         let rx = Rc::new(RefCell::new(Cursor::new(Vec::new())));
         let tx = Rc::new(RefCell::new(Cursor::new(Vec::new())));
-        (
-            MockStream {
-                rx: rx.clone(),
-                tx: tx.clone(),
-            },
-            MockStream {
-                rx: tx.clone(),
-                tx: rx.clone(),
-            }
-        )
+        (MockStream {
+            rx: rx.clone(),
+            tx: tx.clone(),
+        },
+         MockStream {
+            rx: tx.clone(),
+            tx: rx.clone(),
+        })
     }
 }
 

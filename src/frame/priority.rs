@@ -4,10 +4,10 @@ use frame::{Frame, FrameHeader, FrameType, Flags};
 use StreamId;
 use error::{Error, Result};
 
-pub const TYPE_PRIORITY : FrameType = 0x2;
+pub const TYPE_PRIORITY: FrameType = 0x2;
 
-pub const PRIORITY_PAYLOAD_LENGTH : usize = 5;
-const DEFAULT_WEIGHT : u8 = 16;
+pub const PRIORITY_PAYLOAD_LENGTH: usize = 5;
+const DEFAULT_WEIGHT: u8 = 16;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct PriorityFrame {
@@ -43,10 +43,13 @@ impl PriorityFrame {
 
     pub fn read<R: Read>(header: FrameHeader, mut reader: R) -> Result<Self> {
         if header.stream_id == 0 {
-            return Err(Error::protocol("Priority frame must be associated with a stream, stream id was zero"));
+            return Err(Error::protocol("Priority frame must be associated with a stream, stream \
+                                        id was zero"));
         }
         if header.payload_len != PRIORITY_PAYLOAD_LENGTH {
-            return Err(Error::frame_size(format!("Bad payload length '{:?}'! The payload length for a priority frame must be 5 octets", header.payload_len)));
+            return Err(Error::frame_size(format!("Bad payload length '{:?}'! The payload \
+                                                  length for a priority frame must be 5 octets",
+                                                 header.payload_len)));
         }
         let mut buf = [0; PRIORITY_PAYLOAD_LENGTH];
         try!(reader.read_exact(&mut buf));
@@ -104,59 +107,47 @@ mod test {
         let frame = PriorityFrame::new(StreamId(1));
         assert!(!frame.is_exclusive());
         assert_eq!(frame.weight, 16);
-        let mut b : Vec<u8> = Vec::new();
+        let mut b: Vec<u8> = Vec::new();
         b.write_frame(frame.clone()).unwrap();
-        assert_eq!(b, [0, 0, 5,     // length
-                       2,           // type
-                       0,           // flags
-                       0, 0, 0, 1,  // stream id
-                       0, 0, 0, 0,  // dependency
-                       15]);        // weight
+        assert_eq!(b,
+                   [0, 0, 5 /* length */, 2 /* type */, 0 /* flags */, 0, 0, 0,
+                    1 /* stream id */, 0, 0, 0, 0 /* dependency */, 15]);        // weight
         let mut sl = &b[..];
         match sl.read_frame(100).unwrap() {
             FrameKind::Priority(f) => assert_eq!(frame, f),
-            _ => panic!("Wrong frame type")
+            _ => panic!("Wrong frame type"),
         };
     }
 
     #[test]
     fn test_exclusive_priority() {
         let frame = PriorityFrame::new(StreamId(1)).dependency(StreamId(2)).exclusive();
-        let mut b : Vec<u8> = Vec::new();
+        let mut b: Vec<u8> = Vec::new();
         b.write_frame(frame.clone()).unwrap();
-        assert_eq!(b, [0, 0, 5,      // length
-                       2,            // type
-                       0,            // flags
-                       0, 0, 0, 1,   // stream id
-                       128, 0, 0, 2, // dependency
-                       15]);         // weight
+        assert_eq!(b,
+                   [0, 0, 5 /* length */, 2 /* type */, 0 /* flags */, 0, 0, 0,
+                    1 /* stream id */, 128, 0, 0, 2 /* dependency */, 15]);         // weight
         let mut sl = &b[..];
         match sl.read_frame(100).unwrap() {
             FrameKind::Priority(f) => assert_eq!(frame, f),
-            _ => panic!("Wrong frame type")
+            _ => panic!("Wrong frame type"),
         };
     }
 
     #[test]
     fn test_error_zero_stream() {
-        let mut raw = Cursor::new([0, 0, 5,    // length
-                                   2,          // type
-                                   0,          // flags
-                                   0, 0, 0, 0, // stream id
-                                   0, 0, 0, 1, // dependency
-                                   15]);       // weight
+        let mut raw = Cursor::new([0, 0, 5 /* length */, 2 /* type */,
+                                   0 /* flags */, 0, 0, 0, 0 /* stream id */, 0, 0, 0,
+                                   1 /* dependency */, 15]);       // weight
         assert_eq!(raw.read_frame(100).unwrap_err().kind(), ErrorKind::Protocol);
     }
 
     #[test]
     fn test_error_bad_size() {
-        let mut raw = Cursor::new([0, 0, 6,    // length
-                                   2,          // type
-                                   0,          // flags
-                                   0, 0, 0, 1, // stream id
-                                   0, 0, 0, 1, // dependency
-                                   15,         // weight
-                                   0]);
-        assert_eq!(raw.read_frame(100).unwrap_err().kind(), ErrorKind::FrameSize);
+        let mut raw = Cursor::new([0, 0, 6 /* length */, 2 /* type */,
+                                   0 /* flags */, 0, 0, 0, 1 /* stream id */, 0, 0, 0,
+                                   1 /* dependency */, 15 /* weight */, 0]);
+        assert_eq!(raw.read_frame(100).unwrap_err().kind(),
+                   ErrorKind::FrameSize);
     }
 }

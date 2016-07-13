@@ -12,7 +12,9 @@ pub struct Client<C> {
 }
 
 impl<C: Connection> Client<C> {
-    fn new(conn: C) -> Client<C> where C: Connection {
+    fn new(conn: C) -> Client<C>
+        where C: Connection
+    {
         Client {
             conn: conn,
             settings: Settings::default(),
@@ -52,7 +54,7 @@ impl<C: Connection> Client<C> {
         match try!(self.conn.read_frame(100)) {
             FrameKind::Settings(frame) => println!("Settings"),
             // Unknown
-            _ => return Ok(())
+            _ => return Ok(()),
         }
         Ok(())
     }

@@ -12,7 +12,7 @@ use self::priority::{PriorityFrame, TYPE_PRIORITY};
 
 pub type FrameType = u8;
 
-const TYPE_SETTINGS : FrameType = 0x4;
+const TYPE_SETTINGS: FrameType = 0x4;
 
 bitflags! {
     #[derive(Default)] pub flags Flags: u8 {
@@ -31,16 +31,16 @@ pub trait Frame: Sized {
 
 #[derive(Debug)]
 pub enum FrameKind {
-    //Data,
+    // Data,
     Headers(HeadersFrame),
     Priority(PriorityFrame),
-    //RstConn,
+    // RstConn,
     Settings(SettingsFrame),
-    //PushPromise,
-    //Ping,
-    //GoAway,
-    //WindowUpdate,
-    //Continuation,
+    // PushPromise,
+    // Ping,
+    // GoAway,
+    // WindowUpdate,
+    // Continuation,
     Unknown, // TODO remove, discard unknown frames
 }
 
@@ -81,14 +81,15 @@ pub trait ReadFrame: Read + Sized {
         let header = try!(FrameHeader::read(self.by_ref()));
         println!("{:?}", header);
         if header.payload_len > max_size {
-            return Err(Error::new(ErrorKind::FrameSize, "payload length exceeds max frame size setting"));
+            return Err(Error::new(ErrorKind::FrameSize,
+                                  "payload length exceeds max frame size setting"));
         }
         match header.frame_type {
-            TYPE_HEADERS  => Ok(FrameKind::Headers(try!(HeadersFrame::read(header, self)))),
+            TYPE_HEADERS => Ok(FrameKind::Headers(try!(HeadersFrame::read(header, self)))),
             TYPE_SETTINGS => Ok(FrameKind::Settings(try!(SettingsFrame::read(header, self)))),
             TYPE_PRIORITY => Ok(FrameKind::Priority(try!(PriorityFrame::read(header, self)))),
             // TODO read and discard unknown frame payload
-            _  => Ok(FrameKind::Unknown),
+            _ => Ok(FrameKind::Unknown),
         }
     }
 }
@@ -100,10 +101,9 @@ pub trait WriteFrame: Write + Sized {
     fn write_frame<F: Frame>(&mut self, frame: F) -> Result<()> {
         try!(frame.header().write(self.by_ref()));
         try!(frame.write(self));
-        //self.write_all(frame.into().as_ref()).map_err(|e| From::from(e))
+        // self.write_all(frame.into().as_ref()).map_err(|e| From::from(e))
         Ok(())
     }
 }
 
 impl<W: Write> WriteFrame for W {}
-

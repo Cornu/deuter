@@ -4,5 +4,10 @@ version = "0.1.0"
 authors = ["Hans-Harro Horn <h.h.horn@gmail.com>"]
 
 [dependencies]
+log = "0.3"
 byteorder = "*"
 bitflags = "*"
+mio = "*"
+
+[dev-dependencies]
+env_logger = "0.3"
