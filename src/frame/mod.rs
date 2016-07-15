@@ -6,13 +6,13 @@ use std::io::{Read, Write};
 use byteorder::{ByteOrder, BigEndian};
 use error::{Error, ErrorKind, Result};
 use super::StreamId;
-use self::settings::SettingsFrame;
+use self::settings::{SettingsFrame, TYPE_SETTINGS};
 use self::headers::{HeadersFrame, TYPE_HEADERS};
 use self::priority::{PriorityFrame, TYPE_PRIORITY};
 
 pub type FrameType = u8;
 
-const TYPE_SETTINGS: FrameType = 0x4;
+pub const HEADER_SIZE: usize = 9;
 
 bitflags! {
     #[derive(Default)] pub flags Flags: u8 {
@@ -41,7 +41,9 @@ pub enum FrameKind {
     // GoAway,
     // WindowUpdate,
     // Continuation,
-    Unknown, // TODO remove, discard unknown frames
+    // TODO remove 'Unknown', discard unknown frames or
+    // better return Unknown Frame with raw payload
+    Unknown,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -54,7 +56,7 @@ pub struct FrameHeader {
 
 impl FrameHeader {
     fn read<R: Read>(mut reader: R) -> Result<FrameHeader> {
-        let mut buf = [0; 9];
+        let mut buf = [0; HEADER_SIZE];
         try!(reader.read_exact(&mut buf));
         Ok(FrameHeader {
             payload_len: BigEndian::read_uint(&mut buf, 3) as usize,
@@ -65,7 +67,7 @@ impl FrameHeader {
     }
 
     fn write<W: Write>(self, mut writer: W) -> Result<()> {
-        let mut buf = [0; 9];
+        let mut buf = [0; HEADER_SIZE];
         BigEndian::write_uint(&mut buf, self.payload_len as u64, 3);
         buf[3] = self.frame_type as u8;
         buf[4] = self.flags.bits();
@@ -76,10 +78,13 @@ impl FrameHeader {
 }
 
 pub trait ReadFrame: Read + Sized {
-    fn read_frame(&mut self, max_size: usize) -> Result<FrameKind> {
+    fn read_frame(&mut self) -> Result<FrameKind> {
+        self.read_frame_checked(usize::max_value())
+    }
+
+    fn read_frame_checked(&mut self, max_size: usize) -> Result<FrameKind> {
         // TODO use Read::take()
         let header = try!(FrameHeader::read(self.by_ref()));
-        println!("{:?}", header);
         if header.payload_len > max_size {
             return Err(Error::new(ErrorKind::FrameSize,
                                   "payload length exceeds max frame size setting"));
@@ -101,7 +106,6 @@ pub trait WriteFrame: Write + Sized {
     fn write_frame<F: Frame>(&mut self, frame: F) -> Result<()> {
         try!(frame.header().write(self.by_ref()));
         try!(frame.write(self));
-        // self.write_all(frame.into().as_ref()).map_err(|e| From::from(e))
         Ok(())
     }
 }

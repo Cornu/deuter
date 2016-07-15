@@ -5,14 +5,14 @@ extern crate bitflags;
 extern crate byteorder;
 extern crate mio;
 
-//#[cfg(test)]
-//mod mock;
+// #[cfg(test)]
+// mod mock;
 
 mod error;
 mod connection;
 mod frame;
 mod server;
-//mod client;
+// mod client;
 pub mod buffer;
 
 use frame::settings::{Setting, SettingsFrame};

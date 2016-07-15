@@ -1,11 +1,11 @@
 use mio::{Handler, Token, EventLoop, EventSet, PollOpt};
-use mio::tcp::{TcpListener};
+use mio::tcp::TcpListener;
 use mio::util::Slab;
 use std::net::SocketAddr;
 use connection::Connection;
 use error::{Error, ErrorKind, Result};
 
-const SERVER : Token = Token(0);
+const SERVER: Token = Token(0);
 
 struct Server {
     listener: TcpListener,
@@ -35,13 +35,13 @@ impl Server {
             Ok(Some((socket, addr))) => {
                 info!("New Connection from {}", addr);
                 let token = self.connections
-                            .insert_with(|token| Connection::new(socket, token))
-                            .unwrap();
-                event_loop.register(
-                            &self.connections[token].socket,
-                            token,
-                            EventSet::readable(), // TODO hup?
-                            PollOpt::edge()).unwrap();
+                    .insert_with(|token| Connection::new(socket, token))
+                    .unwrap();
+                event_loop.register(&self.connections[token].socket,
+                              token,
+                              EventSet::readable(), // TODO hup?
+                              PollOpt::edge())
+                    .unwrap();
             }
             Ok(None) => {}
             Err(e) => {
@@ -60,8 +60,12 @@ impl Handler for Server {
         match token {
             SERVER => self.accept_new(event_loop),
             _ => {
-                if events.is_readable() { self.connections[token].read() }
-                if events.is_writable() { self.connections[token].write() }
+                if events.is_readable() {
+                    self.connections[token].read()
+                }
+                if events.is_writable() {
+                    self.connections[token].write()
+                }
                 if events.is_hup() {}
                 if events.is_error() {}
                 if self.connections[token].is_closed() {
@@ -72,14 +76,13 @@ impl Handler for Server {
         }
     }
 
-    fn timeout(&mut self, event_loop: &mut EventLoop<Server>, timeout: Self::Timeout) {
-    }
+    fn timeout(&mut self, event_loop: &mut EventLoop<Server>, timeout: Self::Timeout) {}
 }
 
 #[cfg(test)]
 mod test {
     use std::io::{BufRead, BufReader, Read, Write};
-    use std::net::{TcpStream};
+    use std::net::TcpStream;
     extern crate env_logger;
 
     const HOST: &'static str = "127.0.0.1:60254";
@@ -93,7 +96,7 @@ mod test {
 
         INIT.call_once(|| {
             thread::spawn(|| {
-            info!("running server");
+                info!("running server");
                 super::Server::run(HOST.parse().unwrap()).unwrap();
             });
             thread::sleep(Duration::from_millis(1000));
@@ -120,4 +123,3 @@ mod test {
         assert_eq!(recv, "this is a line\n")
     }
 }
-

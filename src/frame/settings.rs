@@ -1,13 +1,14 @@
 use byteorder::{ByteOrder, BigEndian};
 use std::io::{Read, Write};
 use StreamId;
-use frame::{Frame, FrameHeader, Flags, FLAG_ACK, TYPE_SETTINGS};
+use frame::{Frame, FrameHeader, FrameType, Flags, FLAG_ACK};
 use error::{Error, ErrorKind, Result};
 
 const MAX_FLOW_CONTROL_WINDOW_SIZE: u32 = ::std::i32::MAX as u32;
 const MIN_FRAME_SIZE: u32 = 16384;
 const MAX_FRAME_SIZE: u32 = 16777215;
 
+pub const TYPE_SETTINGS: FrameType = 0x4;
 // each settings consists of an 2 byte identifier and 4 byte value
 const SETTING_LENGTH: usize = 6;
 
@@ -160,9 +161,9 @@ impl Frame for SettingsFrame {
 #[cfg(test)]
 mod test {
     use std::io::Cursor;
-    use super::{Setting, SettingsFrame};
+    use super::{Setting, SettingsFrame, TYPE_SETTINGS};
     use super::super::super::StreamId;
-    use frame::{ReadFrame, FrameHeader, WriteFrame, FrameKind, Flags, TYPE_SETTINGS};
+    use frame::{ReadFrame, FrameHeader, WriteFrame, FrameKind, Flags};
     use error::ErrorKind;
 
     fn single_setting_frame_header() -> FrameHeader {
@@ -181,7 +182,7 @@ mod test {
         b.write_frame(frame.clone()).unwrap();
         assert_eq!(b, [0, 0, 0, 4, 0, 0, 0, 0, 0]);
         let mut sl = &b[..];
-        let res = match sl.read_frame(100).unwrap() {
+        let res = match sl.read_frame().unwrap() {
             FrameKind::Settings(frame) => frame,
             _ => panic!("Wrong frame type"),
         };
@@ -195,7 +196,7 @@ mod test {
         b.write_frame(frame.clone()).unwrap();
         assert_eq!(b, [0, 0, 0, 4, 1, 0, 0, 0, 0]);
         let mut sl = &b[..];
-        if let FrameKind::Settings(res) = sl.read_frame(100).unwrap() {
+        if let FrameKind::Settings(res) = sl.read_frame().unwrap() {
             assert_eq!(frame, res);
             assert!(res.is_ack());
         } else {
@@ -215,7 +216,7 @@ mod test {
         let mut b = Vec::new();
         b.write_frame(frame.clone()).unwrap();
         let mut sl = &b[..];
-        let res = match sl.read_frame(1000).unwrap() {
+        let res = match sl.read_frame().unwrap() {
             FrameKind::Settings(frame) => frame,
             _ => panic!("Wrong frame type"),
         };
@@ -230,14 +231,13 @@ mod test {
         b.write_frame(frame).unwrap();
         assert_eq!(b, [0, 0, 6, 4, 1, 0, 0, 0, 0, 0, 2, 0, 0, 0, 1]);
         let mut sl = &b[..];
-        assert_eq!(sl.read_frame(1000).unwrap_err().kind(),
-                   ErrorKind::FrameSize);
+        assert_eq!(sl.read_frame().unwrap_err().kind(), ErrorKind::FrameSize);
     }
 
     #[test]
     fn test_wrong_stream_id_error() {
         let mut b = &vec![0, 0, 0, 4, 0, 0, 0, 0, 100][..];
-        assert_eq!(b.read_frame(1000).unwrap_err().kind(), ErrorKind::Protocol);
+        assert_eq!(b.read_frame().unwrap_err().kind(), ErrorKind::Protocol);
     }
 
     #[test]

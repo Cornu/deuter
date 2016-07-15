@@ -135,7 +135,7 @@ mod test {
         b.write_frame(frame.clone()).unwrap();
         assert_eq!(b, [0, 0, 0, 1, 0, 0, 0, 0, 1]);
         let mut sl = &b[..];
-        let res = match sl.read_frame(100).unwrap() {
+        let res = match sl.read_frame().unwrap() {
             FrameKind::Headers(frame) => frame,
             _ => panic!("Wrong frame type"),
         };
@@ -148,11 +148,16 @@ mod test {
         let frame = HeadersFrame::new(StreamId(1)).priority(priority);
         let mut b = Vec::new();
         b.write_frame(frame.clone()).unwrap();
-        assert_eq!(b,
-                   [0, 0, 5 /* length */, 1 /* type */, 0x20 /* flags */, 0, 0, 0,
-                    1 /* stream id */, 0, 0, 0, 0 /* dependency */, 15]);          // weight
+        let expected = vec![0, 0, 5,    // length
+                            1,          // type
+                            0x20,       // flags
+                            0, 0, 0, 1, // stream id
+                            0, 0, 0, 0, // dependency
+                            15,         // weight
+                           ];
+        assert_eq!(b, expected);
         let mut sl = &b[..];
-        let res = match sl.read_frame(100).unwrap() {
+        let res = match sl.read_frame().unwrap() {
             FrameKind::Headers(frame) => frame,
             _ => panic!("Wrong frame type"),
         };
@@ -165,11 +170,15 @@ mod test {
         let frame = HeadersFrame::new(StreamId(1)).fragment(fragment);
         let mut b = Vec::new();
         b.write_frame(frame.clone()).unwrap();
-        assert_eq!(b,
-                   [0, 0, 10 /* length */, 1 /* type */, 0 /* flags */, 0, 0, 0,
-                    1 /* stream id */, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9]); // fragment
+        let expected = vec![0, 0, 10,   // length
+                            1,          // type
+                            0,          // flags
+                            0, 0, 0, 1, // stream id
+                            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, // fragment
+                           ];
+        assert_eq!(b, expected);
         let mut sl = &b[..];
-        let res = match sl.read_frame(100).unwrap() {
+        let res = match sl.read_frame().unwrap() {
             FrameKind::Headers(frame) => frame,
             _ => panic!("Wrong frame type"),
         };
@@ -181,10 +190,14 @@ mod test {
         let frame = HeadersFrame::new(StreamId(1)).end_headers().end_stream();
         let mut b = Vec::new();
         b.write_frame(frame.clone()).unwrap();
-        assert_eq!(b,
-                   [0, 0, 0 /* length */, 1 /* type */, 5 /* flags */, 0, 0, 0, 1]); // stream id
+        let expected = vec![0, 0, 0,    // length
+                            1,          // type
+                            5,          // flags
+                            0, 0, 0, 1, // stream id
+                           ];
+        assert_eq!(b, expected);
         let mut sl = &b[..];
-        let res = match sl.read_frame(100).unwrap() {
+        let res = match sl.read_frame().unwrap() {
             FrameKind::Headers(frame) => frame,
             _ => panic!("Wrong frame type"),
         };
@@ -203,7 +216,7 @@ mod test {
                      4, 4, 4, 4, 4,    // make sure we can read further
                     ];
         let mut sl = &b[..];
-        let res = match sl.read_frame(100).unwrap() {
+        let res = match sl.read_frame().unwrap() {
             FrameKind::Headers(frame) => frame,
             _ => panic!("Wrong frame type"),
         };

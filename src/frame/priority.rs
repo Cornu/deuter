@@ -113,7 +113,7 @@ mod test {
                    [0, 0, 5 /* length */, 2 /* type */, 0 /* flags */, 0, 0, 0,
                     1 /* stream id */, 0, 0, 0, 0 /* dependency */, 15]);        // weight
         let mut sl = &b[..];
-        match sl.read_frame(100).unwrap() {
+        match sl.read_frame().unwrap() {
             FrameKind::Priority(f) => assert_eq!(frame, f),
             _ => panic!("Wrong frame type"),
         };
@@ -128,7 +128,7 @@ mod test {
                    [0, 0, 5 /* length */, 2 /* type */, 0 /* flags */, 0, 0, 0,
                     1 /* stream id */, 128, 0, 0, 2 /* dependency */, 15]);         // weight
         let mut sl = &b[..];
-        match sl.read_frame(100).unwrap() {
+        match sl.read_frame().unwrap() {
             FrameKind::Priority(f) => assert_eq!(frame, f),
             _ => panic!("Wrong frame type"),
         };
@@ -139,7 +139,7 @@ mod test {
         let mut raw = Cursor::new([0, 0, 5 /* length */, 2 /* type */,
                                    0 /* flags */, 0, 0, 0, 0 /* stream id */, 0, 0, 0,
                                    1 /* dependency */, 15]);       // weight
-        assert_eq!(raw.read_frame(100).unwrap_err().kind(), ErrorKind::Protocol);
+        assert_eq!(raw.read_frame().unwrap_err().kind(), ErrorKind::Protocol);
     }
 
     #[test]
@@ -147,7 +147,6 @@ mod test {
         let mut raw = Cursor::new([0, 0, 6 /* length */, 2 /* type */,
                                    0 /* flags */, 0, 0, 0, 1 /* stream id */, 0, 0, 0,
                                    1 /* dependency */, 15 /* weight */, 0]);
-        assert_eq!(raw.read_frame(100).unwrap_err().kind(),
-                   ErrorKind::FrameSize);
+        assert_eq!(raw.read_frame().unwrap_err().kind(), ErrorKind::FrameSize);
     }
 }
