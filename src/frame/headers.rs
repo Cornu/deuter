@@ -46,8 +46,10 @@ impl HeadersFrame {
         self.end_stream = true;
         self
     }
+}
 
-    pub fn read<R: Read>(header: FrameHeader, mut reader: R) -> Result<HeadersFrame> {
+impl Frame for HeadersFrame {
+    fn from_reader<R: Read>(header: FrameHeader, mut reader: R) -> Result<HeadersFrame> {
         if header.stream_id == 0 {
             return Err(Error::protocol("Headers frame must be associated with a stream, stream \
                                         id was zero"));
@@ -65,7 +67,7 @@ impl HeadersFrame {
 
         let mut priority = None;
         if header.flags.contains(FLAG_PRIORITY) {
-            priority = Some(try!(PriorityFrame::read(header.clone(), reader.by_ref())));
+            priority = Some(try!(PriorityFrame::from_reader(header.clone(), reader.by_ref())));
             payload_len -= PRIORITY_PAYLOAD_LENGTH;
         }
 
@@ -86,11 +88,29 @@ impl HeadersFrame {
             end_stream: header.flags.contains(FLAG_END_STREAM),
         })
     }
-}
 
-impl Frame for HeadersFrame {
-    fn header(&self) -> FrameHeader {
+    fn into_writer<W: Write>(self, mut writer: W) -> Result<()> {
+        // TODO padding
+        if let Some(priority) = self.priority {
+            try!(priority.into_writer(writer.by_ref()));
+        }
+        try!(writer.write_all(self.fragment.as_ref()));
+        Ok(())
+    }
+
+    fn payload_len(&self) -> usize {
         let mut len = self.fragment.len();
+        if let Some(_) = self.priority {
+            len += PRIORITY_PAYLOAD_LENGTH;
+        }
+        len
+    }
+
+    fn frame_type(&self) -> FrameType {
+        TYPE_HEADERS
+    }
+
+    fn flags(&self) -> Flags {
         let mut flags = Flags::empty();
         if self.end_headers {
             flags.insert(FLAG_END_HEADERS);
@@ -100,23 +120,12 @@ impl Frame for HeadersFrame {
         }
         if let Some(_) = self.priority {
             flags.insert(FLAG_PRIORITY);
-            len += PRIORITY_PAYLOAD_LENGTH;
         }
-        FrameHeader {
-            payload_len: len,
-            frame_type: TYPE_HEADERS,
-            flags: flags,
-            stream_id: self.stream_id,
-        }
+        flags
     }
 
-    fn write<W: Write>(self, writer: &mut W) -> Result<()> {
-        // TODO padding
-        if let Some(priority) = self.priority {
-            try!(priority.write(writer));
-        }
-        try!(writer.write(self.fragment.as_ref()));
-        Ok(())
+    fn stream_id(&self) -> StreamId {
+        self.stream_id
     }
 }
 

@@ -1,6 +1,5 @@
 use byteorder::{ByteOrder, BigEndian};
 use std::io::{Read, Write};
-use StreamId;
 use frame::{Frame, FrameHeader, FrameType, Flags, FLAG_ACK};
 use error::{Error, ErrorKind, Result};
 
@@ -30,29 +29,6 @@ pub struct SettingsFrame {
 }
 
 impl SettingsFrame {
-    pub fn read<R: Read>(header: FrameHeader, mut reader: R) -> Result<SettingsFrame> {
-        if header.stream_id != 0 {
-            return Err(Error::new(ErrorKind::Protocol,
-                                  "The stream identifier for a settings frame must be zero"));
-        }
-        let mut frame: Self = Default::default();
-        if header.flags.contains(FLAG_ACK) {
-            frame.ack = true;
-            if header.payload_len != 0 {
-                return Err(Error::new(ErrorKind::FrameSize,
-                                      "Settings Frame with Ack Flag must be empty"));
-            }
-        }
-        if header.payload_len % 6 != 0 {
-            return Err(Error::new(ErrorKind::FrameSize,
-                                  "Settings Frame payload length must be multiple of 6"));
-        }
-        for _ in 0..header.payload_len / 6 {
-            try!(frame.read_setting(reader.by_ref()));
-        }
-        Ok(frame)
-    }
-
     pub fn ack() -> Self {
         Self::default().set_ack()
     }
@@ -118,8 +94,33 @@ impl SettingsFrame {
         }
         Ok(())
     }
+}
 
-    fn write_payload<W: Write>(&self, mut writer: W) -> Result<()> {
+impl Frame for SettingsFrame {
+    fn from_reader<R: Read>(header: FrameHeader, mut reader: R) -> Result<SettingsFrame> {
+        if header.stream_id != 0 {
+            return Err(Error::new(ErrorKind::Protocol,
+                                  "The stream identifier for a settings frame must be zero"));
+        }
+        let mut frame: Self = Default::default();
+        if header.flags.contains(FLAG_ACK) {
+            frame.ack = true;
+            if header.payload_len != 0 {
+                return Err(Error::new(ErrorKind::FrameSize,
+                                      "Settings Frame with Ack Flag must be empty"));
+            }
+        }
+        if header.payload_len % 6 != 0 {
+            return Err(Error::new(ErrorKind::FrameSize,
+                                  "Settings Frame payload length must be multiple of 6"));
+        }
+        for _ in 0..header.payload_len / 6 {
+            try!(frame.read_setting(reader.by_ref()));
+        }
+        Ok(frame)
+    }
+
+    fn into_writer<W: Write>(self, mut writer: W) -> Result<()> {
         let mut buf = [0; 6];
         for setting in self.settings.iter() {
             let (id, val) = match *setting {
@@ -132,29 +133,25 @@ impl SettingsFrame {
             };
             BigEndian::write_u16(&mut buf, id);
             BigEndian::write_u32(&mut buf[2..], val);
-            try!(writer.write(&buf));
+            try!(writer.write_all(&buf));
         }
         Ok(())
     }
-}
 
-impl Frame for SettingsFrame {
-    fn header(&self) -> FrameHeader {
-        let flags = if self.ack {
+    fn payload_len(&self) -> usize {
+        SETTING_LENGTH * self.settings.len()
+    }
+
+    fn frame_type(&self) -> FrameType {
+        TYPE_SETTINGS
+    }
+
+    fn flags(&self) -> Flags {
+        if self.ack {
             FLAG_ACK
         } else {
             Flags::empty()
-        };
-        FrameHeader {
-            payload_len: SETTING_LENGTH * self.settings.len(),
-            frame_type: TYPE_SETTINGS,
-            flags: flags,
-            stream_id: StreamId(0),
         }
-    }
-
-    fn write<W: Write>(self, writer: &mut W) -> Result<()> {
-        self.write_payload(writer)
     }
 }
 
@@ -162,8 +159,8 @@ impl Frame for SettingsFrame {
 mod test {
     use std::io::Cursor;
     use super::{Setting, SettingsFrame, TYPE_SETTINGS};
-    use super::super::super::StreamId;
-    use frame::{ReadFrame, FrameHeader, WriteFrame, FrameKind, Flags};
+    use StreamId;
+    use frame::{ReadFrame, FrameHeader, WriteFrame, Frame, FrameKind, Flags};
     use error::ErrorKind;
 
     fn single_setting_frame_header() -> FrameHeader {
@@ -244,24 +241,32 @@ mod test {
     fn test_invalid_enable_push_frame_error() {
         // enable_push value > 1
         let payload = Cursor::new([0, 2, 0, 0, 0, 100]);
-        assert_eq!(SettingsFrame::read(single_setting_frame_header(), payload).unwrap_err().kind(),
+        assert_eq!(SettingsFrame::from_reader(single_setting_frame_header(), payload)
+                       .unwrap_err()
+                       .kind(),
                    ErrorKind::Protocol);
     }
 
     #[test]
     fn test_invalid_initial_window_size() {
         let payload = Cursor::new([0, 4, 129, 255, 255, 255]);
-        assert_eq!(SettingsFrame::read(single_setting_frame_header(), payload).unwrap_err().kind(),
+        assert_eq!(SettingsFrame::from_reader(single_setting_frame_header(), payload)
+                       .unwrap_err()
+                       .kind(),
                    ErrorKind::FlowControl);
     }
 
     #[test]
     fn test_invalid_max_frame_size() {
         let mut payload = Cursor::new([0, 5, 0, 0, 0, 10]);
-        assert_eq!(SettingsFrame::read(single_setting_frame_header(), payload).unwrap_err().kind(),
+        assert_eq!(SettingsFrame::from_reader(single_setting_frame_header(), payload)
+                       .unwrap_err()
+                       .kind(),
                    ErrorKind::Protocol);
         payload = Cursor::new([0, 5, 255, 255, 255, 255]);
-        assert_eq!(SettingsFrame::read(single_setting_frame_header(), payload).unwrap_err().kind(),
+        assert_eq!(SettingsFrame::from_reader(single_setting_frame_header(), payload)
+                       .unwrap_err()
+                       .kind(),
                    ErrorKind::Protocol);
     }
 }

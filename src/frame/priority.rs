@@ -1,6 +1,6 @@
 use std::io::{Read, Write};
 use byteorder::{ByteOrder, BigEndian};
-use frame::{Frame, FrameHeader, FrameType, Flags};
+use frame::{Frame, FrameHeader, FrameType};
 use StreamId;
 use error::{Error, Result};
 
@@ -40,8 +40,10 @@ impl PriorityFrame {
     fn is_exclusive(&self) -> bool {
         self.exclusive
     }
+}
 
-    pub fn read<R: Read>(header: FrameHeader, mut reader: R) -> Result<Self> {
+impl Frame for PriorityFrame {
+    fn from_reader<R: Read>(header: FrameHeader, mut reader: R) -> Result<Self> {
         if header.stream_id == 0 {
             return Err(Error::protocol("Priority frame must be associated with a stream, stream \
                                         id was zero"));
@@ -64,7 +66,7 @@ impl PriorityFrame {
         })
     }
 
-    fn write_payload<W: Write>(&self, mut writer: W) -> Result<()> {
+    fn into_writer<W: Write>(self, mut writer: W) -> Result<()> {
         let mut buf = vec![0; PRIORITY_PAYLOAD_LENGTH];
         let mut dep = self.dependency.into();
         if self.exclusive {
@@ -72,24 +74,20 @@ impl PriorityFrame {
         }
         BigEndian::write_u32(&mut buf, dep);
         buf[4] = self.weight - 1;
-        try!(writer.write(&buf));
+        try!(writer.write_all(&buf));
         Ok(())
     }
-}
 
-impl Frame for PriorityFrame {
-    fn header(&self) -> FrameHeader {
-        FrameHeader {
-            payload_len: PRIORITY_PAYLOAD_LENGTH,
-            frame_type: TYPE_PRIORITY,
-            flags: Flags::empty(),
-            stream_id: self.stream_id,
-        }
+    fn payload_len(&self) -> usize {
+        PRIORITY_PAYLOAD_LENGTH
     }
 
-    #[inline]
-    fn write<W: Write>(self, writer: &mut W) -> Result<()> {
-        self.write_payload(writer)
+    fn frame_type(&self) -> FrameType {
+        TYPE_PRIORITY
+    }
+
+    fn stream_id(&self) -> StreamId {
+        self.stream_id
     }
 }
 

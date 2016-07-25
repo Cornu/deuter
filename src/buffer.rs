@@ -1,12 +1,11 @@
 //! Buffer and Reader for Asynchronous / non-blocking IO
 
 use std::io;
-use std::io::{Read, ErrorKind};
+use std::io::{Read, BufRead, ErrorKind};
 use std::cmp;
 use std::ops::{Index, Range, RangeTo, RangeFrom, RangeFull};
-use byteorder::{ByteOrder, BigEndian};
 
-use frame::{ReadFrame, FrameKind, HEADER_SIZE};
+use frame::FrameIter;
 use error::Result;
 
 const INITIAL_BUF_SIZE: usize = 64;
@@ -14,9 +13,11 @@ const DEFAULT_BUF_SIZE: usize = 8 * 1024;
 
 /// The `AsyncBufReader` adds asynchronous buffering to any reader.
 ///
+/// contiguous growable, sliding buffer
+///
 /// ```
 /// use std::net::{TcpListener, TcpStream};
-/// use std::io::{Read, Write};
+/// use std::io::{Read, Write, BufRead};
 /// use deuter::buffer::AsyncBufReader;
 ///
 /// let listener = TcpListener::bind("127.0.0.1:12345").unwrap();
@@ -39,8 +40,8 @@ const DEFAULT_BUF_SIZE: usize = 8 * 1024;
 pub struct AsyncBufReader<R> {
     inner: R,
     buf: Vec<u8>,
-    start: usize,
-    end: usize,
+    pos: usize,
+    cap: usize,
 }
 
 impl<R: Read> AsyncBufReader<R> {
@@ -48,18 +49,30 @@ impl<R: Read> AsyncBufReader<R> {
         AsyncBufReader {
             inner: inner,
             buf: vec![0; INITIAL_BUF_SIZE],
-            start: 0,
-            end: 0,
+            pos: 0,
+            cap: 0,
         }
     }
 
     pub fn len(&self) -> usize {
-        self.end - self.start
+        self.cap - self.pos
     }
+}
 
-    pub fn fill_buf(&mut self) -> io::Result<&[u8]> {
+impl<R: Read> Read for AsyncBufReader<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let len = cmp::min(buf.len(), self.len());
+        buf[..len].copy_from_slice(&self.buf[self.pos..self.pos + len]);
+        self.consume(len);
+        Ok(len)
+    }
+}
+
+// TODO check other `BufRead` trait functions to work with our `fill_buf()`
+impl<R: Read> BufRead for AsyncBufReader<R> {
+    fn fill_buf(&mut self) -> io::Result<&[u8]> {
         loop {
-            if self.end == self.buf.len() {
+            if self.cap == self.buf.len() {
                 // double the allocated space, for small sizes,
                 // else allocated extra DEFAULT_BUF_SIZE
                 let new_len = self.len() + cmp::min(self.len(), DEFAULT_BUF_SIZE);
@@ -67,39 +80,30 @@ impl<R: Read> AsyncBufReader<R> {
                 new_buf.copy_from_slice(&self[..]);
                 self.buf = new_buf;
             }
-            let remaining = self.buf.len() - self.end;
-            let nread = try!(self.inner.read(&mut self.buf[self.end..]).or_else(|e| {
+            let remaining = self.buf.len() - self.cap;
+            let nread = try!(self.inner.read(&mut self.buf[self.cap..]).or_else(|e| {
                 match e.kind() {
                     ErrorKind::WouldBlock => Ok(0),
                     _ => Err(e),
                 }
             }));
-            self.end += nread;
+            self.cap += nread;
             // if we read exactly until our buffer is full, there could be more data
             // else break here
             if nread != remaining {
                 break;
             }
         }
-        Ok(&self.buf[self.start..self.end])
+        Ok(&self.buf[self.pos..self.cap])
     }
 
     fn consume(&mut self, amt: usize) {
-        self.start = cmp::min(self.start + amt, self.end);
-        // if we consumed everything until the end, reset buffer to start
-        if self.start == self.end {
-            self.start = 0;
-            self.end = 0;
+        self.pos = cmp::min(self.pos + amt, self.cap);
+        // if we consumed everything until the end, reset buffer to beginning
+        if self.pos == self.cap {
+            self.pos = 0;
+            self.cap = 0;
         }
-    }
-}
-
-impl<R: Read> Read for AsyncBufReader<R> {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let len = cmp::min(buf.len(), self.len());
-        buf[..len].copy_from_slice(&self.buf[self.start..self.start + len]);
-        self.consume(len);
-        Ok(len)
     }
 }
 
@@ -107,7 +111,7 @@ impl<R: Read> Index<usize> for AsyncBufReader<R> {
     type Output = u8;
 
     fn index(&self, index: usize) -> &u8 {
-        &self.buf[self.start + index]
+        &self.buf[self.pos + index]
     }
 }
 
@@ -115,7 +119,7 @@ impl<R: Read> Index<Range<usize>> for AsyncBufReader<R> {
     type Output = [u8];
 
     fn index(&self, index: Range<usize>) -> &[u8] {
-        &self.buf[self.start + index.start..self.start + index.end]
+        &self.buf[self.pos + index.start..self.pos + index.end]
     }
 }
 
@@ -123,7 +127,7 @@ impl<R: Read> Index<RangeTo<usize>> for AsyncBufReader<R> {
     type Output = [u8];
 
     fn index(&self, index: RangeTo<usize>) -> &[u8] {
-        &self.buf[self.start..self.start + index.end]
+        &self.buf[self.pos..self.pos + index.end]
     }
 }
 
@@ -131,7 +135,7 @@ impl<R: Read> Index<RangeFrom<usize>> for AsyncBufReader<R> {
     type Output = [u8];
 
     fn index(&self, index: RangeFrom<usize>) -> &[u8] {
-        &self.buf[self.start + index.start..self.end]
+        &self.buf[self.pos + index.start..self.cap]
     }
 }
 
@@ -139,36 +143,39 @@ impl<R: Read> Index<RangeFull> for AsyncBufReader<R> {
     type Output = [u8];
 
     fn index(&self, _index: RangeFull) -> &[u8] {
-        &self.buf[self.start..self.end]
+        &self.buf[self.pos..self.cap]
     }
 }
 
 // #############
 
-pub trait AsyncReadFrame {
-    fn try_read_frame(&mut self) -> Result<Option<FrameKind>>;
+pub struct FrameReader<R> {
+    inner: AsyncBufReader<R>,
+    max_payload: usize,
 }
 
-impl<R: Read> AsyncReadFrame for AsyncBufReader<R> {
-    fn try_read_frame(&mut self) -> Result<Option<FrameKind>> {
-        try!(self.fill_buf());
-        // header starts with 24 bit length field
-        if self.len() < 3 {
-            return Ok(None);
+impl<'a, R: Read> FrameReader<R> {
+    fn new(inner: R, max_payload: usize) -> FrameReader<R> {
+        FrameReader {
+            inner: AsyncBufReader::new(inner),
+            max_payload: max_payload,
         }
-        let size = BigEndian::read_uint(&self[..4], 3) as usize;
-        if self.len() < size + HEADER_SIZE {
-            return Ok(None);
-        }
-        self.read_frame().map(|f| Some(f))
+    }
+
+    fn frames(&'a mut self) -> Result<FrameIter<'a>> {
+        let buf = try!(self.inner.fill_buf());
+        Ok(FrameIter::new(buf, self.max_payload))
     }
 }
 
 #[cfg(test)]
 mod test {
-    use std::io::{Read, Write, Cursor};
+    use std::io::{Read, Write, BufRead, Cursor};
     use std::net::{TcpListener, TcpStream};
-    use super::{AsyncBufReader, AsyncReadFrame};
+    use super::{AsyncBufReader, FrameReader};
+    use StreamId;
+    use frame::{Frame, WriteFrame, FrameKind};
+    use frame::headers::HeadersFrame;
 
     #[test]
     fn test_tcpstream_fillbuf() {
@@ -191,7 +198,7 @@ mod test {
 
     #[test]
     fn test_index() {
-        let mut b = Cursor::new([1, 2, 3, 4, 5, 6]);
+        let b = Cursor::new([1, 2, 3, 4, 5, 6]);
         let mut r = AsyncBufReader::new(b);
         r.fill_buf().unwrap();
         assert_eq!(r[0], 1);
@@ -207,28 +214,28 @@ mod test {
     }
 
     #[test]
-    fn test_read_frame() {
+    fn test_iter_frames() {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let mut tx = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
 
         let conn = listener.accept().unwrap().0;
         conn.set_nonblocking(true).unwrap();
-        let mut r = AsyncBufReader::new(conn);
+        let mut r = FrameReader::new(conn, 100);
 
-        assert!(r.try_read_frame().unwrap().is_none());
-
-        let b = vec![0, 0, 0,     // length
-                     1,           // type headers
-                     0,           // flags
-                     0, 0, 0, 1,  // stream id
-                     0, 1, 2, 3,  // fragment
-                    ];
-        tx.write(&b[0..4]).unwrap();
-        r.fill_buf().unwrap();
-        assert!(r.try_read_frame().unwrap().is_none());
-        tx.write(&b[4..]).unwrap();
-        r.fill_buf().unwrap();
-        assert_eq!(r.len(), 13);
-        assert!(r.try_read_frame().unwrap().is_some());
+        assert!(r.frames().unwrap().next().is_none());
+        tx.write_frame(HeadersFrame::new(StreamId(1))).unwrap();
+        tx.write_frame(HeadersFrame::new(StreamId(2))).unwrap();
+        let mut iter = r.frames().unwrap();
+        let frame1 = match iter.next().unwrap().unwrap() {
+            FrameKind::Headers(frame) => frame,
+            _ => panic!("Wrong frame"),
+        };
+        assert_eq!(frame1.stream_id(), 1);
+        let frame2 = match iter.next().unwrap().unwrap() {
+            FrameKind::Headers(frame) => frame,
+            _ => panic!("Wrong frame"),
+        };
+        assert_eq!(frame2.stream_id(), 2);
+        assert!(iter.next().is_none());
     }
 }
